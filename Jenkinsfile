@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         // JFrog URL — ubah sesuai instance BCA
-        JFROG_URL = 'https://trialsn8cpb.jfrog.io'
+        JFROG_URL = 'https://trial789.jfrog.io'
 
         // Credentials ID dari Jenkins Manage Credentials
         // Tipe: Username with Password, ID: 'jfrog-xray-credentials'
