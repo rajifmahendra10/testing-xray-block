@@ -85,14 +85,14 @@ pipeline {
                                 export JFROG_URL=${JFROG_URL}
                                 export JFROG_USER=${JFROG_USER}
                                 export JFROG_PASS=${JFROG_PASS}
-                                ${VENV_DIR}/bin/python scenario-xray-block/setup_jfrog_xray.py
+                                ${VENV_DIR}/bin/python setup_jfrog_xray.py
                             """
                         } else {
                             bat """
                                 set JFROG_URL=${JFROG_URL}
                                 set JFROG_USER=%JFROG_USER%
                                 set JFROG_PASS=%JFROG_PASS%
-                                ${VENV_DIR}\\Scripts\\python scenario-xray-block\\setup_jfrog_xray.py
+                                ${VENV_DIR}\\Scripts\\python setup_jfrog_xray.py
                             """
                         }
                     }
@@ -140,7 +140,7 @@ pipeline {
                                 export JFROG_URL=${JFROG_URL}
                                 export JFROG_USER=${JFROG_USER}
                                 export JFROG_PASS=${JFROG_PASS}
-                                ${VENV_DIR}/bin/python scenario-xray-block/test_xray_block.py 2>&1 | tee test_output.txt
+                                ${VENV_DIR}/bin/python test_xray_block.py 2>&1 | tee test_output.txt
                                 grep -q "9/9 PASSED" test_output.txt
                             """
                         } else {
@@ -148,7 +148,7 @@ pipeline {
                                 set JFROG_URL=${JFROG_URL}
                                 set JFROG_USER=%JFROG_USER%
                                 set JFROG_PASS=%JFROG_PASS%
-                                ${VENV_DIR}\\Scripts\\python scenario-xray-block\\test_xray_block.py > test_output.txt 2>&1
+                                ${VENV_DIR}\\Scripts\\python \test_xray_block.py > test_output.txt 2>&1
                                 type test_output.txt
                                 findstr /C:"9/9 PASSED" test_output.txt
                             """
