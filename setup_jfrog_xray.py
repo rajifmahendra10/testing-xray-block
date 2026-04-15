@@ -13,9 +13,9 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # CONFIGURATION
 # Reads from environment variables if set (Jenkins), else falls back to defaults
 # ===========================
-JFROG_URL  = os.environ.get("JFROG_URL",  "https://trialsn8cpb.jfrog.io")
-JFROG_USER = os.environ.get("JFROG_USER", "aurelie.augustine@izeno.com")
-JFROG_PASS = os.environ.get("JFROG_PASS", "Izeno123")
+JFROG_URL  = os.environ.get("JFROG_URL",  "https://trial789.jfrog.io")
+JFROG_USER = os.environ.get("JFROG_USER", "abdul.effendi@izeno.com")
+JFROG_PASS = os.environ.get("JFROG_PASS", "JfR06!2026")
 
 # Repository names
 REMOTE_REPO = "maven-central-remote"

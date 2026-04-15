@@ -12,8 +12,8 @@
     <servers>
         <server>
             <id>jfrog-central</id>
-            <username>aurelie.augustine@izeno.com</username>
-            <password>Izeno123</password>
+            <username>abdul.effendi@izeno.com</username>
+            <password>JfR06!2026</password>
         </server>
     </servers>
 
@@ -22,7 +22,7 @@
         <mirror>
             <id>jfrog-central</id>
             <name>JFrog Virtual Repository (Remote + Local)</name>
-            <url>https://trialsn8cpb.jfrog.io/artifactory/maven-virtual</url>
+            <url>https://trial789.jfrog.io/artifactory/maven-virtual</url>
             <mirrorOf>*</mirrorOf>
         </mirror>
     </mirrors>
@@ -34,7 +34,7 @@
                 <repository>
                     <id>jfrog-central</id>
                     <name>JFrog Maven Virtual</name>
-                    <url>https://trialsn8cpb.jfrog.io/artifactory/maven-virtual</url>
+                    <url>https://trial789.jfrog.io/artifactory/maven-virtual</url>
                     <releases>
                         <enabled>true</enabled>
                     </releases>
@@ -47,7 +47,7 @@
                 <pluginRepository>
                     <id>jfrog-central</id>
                     <name>JFrog Maven Virtual</name>
-                    <url>https://trialsn8cpb.jfrog.io/artifactory/maven-virtual</url>
+                    <url>https://trial789.jfrog.io/artifactory/maven-virtual</url>
                     <releases>
                         <enabled>true</enabled>
                     </releases>
