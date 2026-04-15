@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Maven Settings for JFrog Remote Repository
+  Semua dependency di-resolve melalui JFrog remote repo
+  sehingga Xray bisa scan SEBELUM artifact masuk cache
+-->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0 
+          https://maven.apache.org/xsd/settings-1.2.0.xsd">
+
+    <servers>
+        <server>
+            <id>jfrog-central</id>
+            <username>aurelie.augustine@izeno.com</username>
+            <password>Izeno123</password>
+        </server>
+    </servers>
+
+    <mirrors>
+        <!-- Force ALL Maven requests through JFrog virtual repo -->
+        <mirror>
+            <id>jfrog-central</id>
+            <name>JFrog Virtual Repository (Remote + Local)</name>
+            <url>https://trialsn8cpb.jfrog.io/artifactory/maven-virtual</url>
+            <mirrorOf>*</mirrorOf>
+        </mirror>
+    </mirrors>
+
+    <profiles>
+        <profile>
+            <id>jfrog</id>
+            <repositories>
+                <repository>
+                    <id>jfrog-central</id>
+                    <name>JFrog Maven Virtual</name>
+                    <url>https://trialsn8cpb.jfrog.io/artifactory/maven-virtual</url>
+                    <releases>
+                        <enabled>true</enabled>
+                    </releases>
+                    <snapshots>
+                        <enabled>true</enabled>
+                    </snapshots>
+                </repository>
+            </repositories>
+            <pluginRepositories>
+                <pluginRepository>
+                    <id>jfrog-central</id>
+                    <name>JFrog Maven Virtual</name>
+                    <url>https://trialsn8cpb.jfrog.io/artifactory/maven-virtual</url>
+                    <releases>
+                        <enabled>true</enabled>
+                    </releases>
+                    <snapshots>
+                        <enabled>true</enabled>
+                    </snapshots>
+                </pluginRepository>
+            </pluginRepositories>
+        </profile>
+    </profiles>
+
+    <activeProfiles>
+        <activeProfile>jfrog</activeProfile>
+    </activeProfiles>
+</settings>
