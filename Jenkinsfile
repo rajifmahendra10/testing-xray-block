@@ -6,9 +6,9 @@ pipeline {
         JFROG_URL = 'https://trial789.jfrog.io'
 
         // Credentials ID dari Jenkins Manage Credentials
-        // Tipe: Username with Password, ID: 'jfrog-xray-credentials'
+        // Tipe: Username with Password, ID: 'jfrog-rahman-credential'
         // Username = JFrog email, Password = JFrog password
-        JFROG_CREDS = credentials('jfrog-xray-credentials')
+        JFROG_CREDS = credentials('jfrog-rahman-credential')
 
         // Nama virtualenv yang akan dibuat di workspace
         VENV_DIR = '.venv-xray'
@@ -76,7 +76,7 @@ pipeline {
                 script {
                     // Credentials dipass sebagai environment variable — AMAN, tidak muncul di log
                     withCredentials([usernamePassword(
-                        credentialsId: 'jfrog-xray-credentials',
+                        credentialsId: 'jfrog-rahman-credential',
                         usernameVariable: 'JFROG_USER',
                         passwordVariable: 'JFROG_PASS'
                     )]) {
@@ -131,7 +131,7 @@ pipeline {
                 echo '================================================='
                 script {
                     withCredentials([usernamePassword(
-                        credentialsId: 'jfrog-xray-credentials',
+                        credentialsId: 'jfrog-rahman-credential',
                         usernameVariable: 'JFROG_USER',
                         passwordVariable: 'JFROG_PASS'
                     )]) {
