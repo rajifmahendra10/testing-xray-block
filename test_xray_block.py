@@ -158,7 +158,7 @@ def wait_for_xray_ready(max_wait=300, interval=15):
         except Exception as e:
             print(f"  ⚠️ [{elapsed}s] Error: {e}")
 
-        # Every 3rd attempt, also check artifact summary for log4j
+        # Every 3rd attempt, check artifact summary for log4j to diagnose scan status
         if attempt % 3 == 0:
             try:
                 summary_payload = {
@@ -170,15 +170,23 @@ def wait_for_xray_ready(max_wait=300, interval=15):
                 if sr.status_code == 200:
                     sdata = sr.json()
                     artifacts = sdata.get("artifacts", [])
+                    errors = sdata.get("errors", [])
                     if artifacts:
                         issues = artifacts[0].get("issues", [])
                         if issues:
                             print(f"  ✅ [{elapsed}s] log4j scan complete: {len(issues)} issues found!")
                             return True
                         else:
-                            print(f"  ℹ️ [{elapsed}s] log4j indexed but 0 issues yet (scan in progress)")
-            except:
-                pass
+                            print(f"  ℹ️ [{elapsed}s] log4j indexed but 0 issues yet (scan still running...)")
+                    elif errors:
+                        err_msg = errors[0].get("error", "?")[:100] if errors else "?"
+                        print(f"  ⚠️ [{elapsed}s] log4j not in Xray index yet: {err_msg}")
+                    else:
+                        print(f"  ℹ️ [{elapsed}s] log4j: empty summary response")
+                else:
+                    print(f"  ⚠️ [{elapsed}s] summary API: HTTP {sr.status_code} - {sr.text[:80]}")
+            except Exception as e:
+                print(f"  ⚠️ [{elapsed}s] summary check error: {e}")
 
         time.sleep(interval)
 

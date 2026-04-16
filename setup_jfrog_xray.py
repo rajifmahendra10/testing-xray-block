@@ -83,9 +83,22 @@ def create_remote_repo():
     }
 
     resp = session.put(f"{ARTIFACTORY_API}/repositories/{REMOTE_REPO}", json=payload)
-    return log_result(resp, 
-                      f"Remote repo '{REMOTE_REPO}' created! (proxying Maven Central)",
-                      f"Failed to create remote repo")
+    if resp.status_code in [200, 201]:
+        log("✅", f"Remote repo '{REMOTE_REPO}' created! (proxying Maven Central)")
+        return True
+    elif resp.status_code == 409 or (resp.status_code == 400 and "already exists" in resp.text.lower()):
+        log("⚠️", "Already exists - enabling xrayIndex on existing repo...")
+        upd = session.post(f"{ARTIFACTORY_API}/repositories/{REMOTE_REPO}", json={"xrayIndex": True})
+        if upd.status_code in [200, 201]:
+            log("✅", f"  xrayIndex=True applied to '{REMOTE_REPO}'")
+        else:
+            log("⚠️", f"  xrayIndex update: {upd.status_code} - {upd.text[:80]}")
+        return True
+    else:
+        log("❌", "Failed to create remote repo")
+        print(f"   Status: {resp.status_code}")
+        print(f"   Response: {resp.text[:500]}")
+        return False
 
 
 # ===========================
@@ -107,9 +120,22 @@ def create_local_repo():
     }
 
     resp = session.put(f"{ARTIFACTORY_API}/repositories/{LOCAL_REPO}", json=payload)
-    return log_result(resp,
-                      f"Local repo '{LOCAL_REPO}' created!",
-                      f"Failed to create local repo")
+    if resp.status_code in [200, 201]:
+        log("✅", f"Local repo '{LOCAL_REPO}' created!")
+        return True
+    elif resp.status_code == 409 or (resp.status_code == 400 and "already exists" in resp.text.lower()):
+        log("⚠️", "Already exists - enabling xrayIndex on existing repo...")
+        upd = session.post(f"{ARTIFACTORY_API}/repositories/{LOCAL_REPO}", json={"xrayIndex": True})
+        if upd.status_code in [200, 201]:
+            log("✅", f"  xrayIndex=True applied to '{LOCAL_REPO}'")
+        else:
+            log("⚠️", f"  xrayIndex update: {upd.status_code} - {upd.text[:80]}")
+        return True
+    else:
+        log("❌", "Failed to create local repo")
+        print(f"   Status: {resp.status_code}")
+        print(f"   Response: {resp.text[:500]}")
+        return False
 
 
 # ===========================
@@ -142,40 +168,69 @@ def create_virtual_repo():
 def enable_xray_indexing():
     log("🔍", "STEP 4: Enabling Xray indexing on repositories...")
 
-    # Add repos to Xray indexed resources
-    payload = {
-        "names": [REMOTE_REPO, LOCAL_REPO]
-    }
+    # Get bin_mgr_id from Xray
+    bin_mgr_id = "default"
+    try:
+        bm_resp = session.get(f"{XRAY_API}/v1/binMgr")
+        if bm_resp.status_code == 200:
+            bm_data = bm_resp.json()
+            if isinstance(bm_data, list) and len(bm_data) > 0:
+                bin_mgr_id = bm_data[0].get("id", "default")
+            elif isinstance(bm_data, dict):
+                bin_mgr_id = bm_data.get("id", bm_data.get("bin_mgr_id", "default"))
+        log("ℹ️", f"  Binary Manager ID: {bin_mgr_id}")
+    except Exception as e:
+        log("⚠️", f"  Could not get binary manager: {e}")
 
-    resp = session.put(f"{XRAY_API}/v1/binMgr/builds", json={
-        "indexed_builds": []
-    })
-
-    # Index repositories in Xray
-    for repo_name in [REMOTE_REPO, LOCAL_REPO]:
-        payload = {
-            "name": repo_name,
-            "type": "local" if repo_name == LOCAL_REPO else "remote",
-            "pkg_type": "Maven",
-            "xray_index": True
-        }
-        log("🔎", f"  Enabling Xray index for '{repo_name}'...")
-
-    # Use the v1 API to configure indexed repos
-    resp = session.post(f"{XRAY_API}/v1/binMgr/repos", json={
-        "indexed_repos": [
-            {"name": REMOTE_REPO, "type": "remote", "pkg_type": "Maven"},
-            {"name": LOCAL_REPO, "type": "local", "pkg_type": "Maven"}
-        ]
-    })
-
-    if resp.status_code in [200, 201]:
-        log("✅", "Xray indexing enabled for all repositories!")
-        return True
+    # GET current indexed repos to avoid overwriting existing ones
+    current_indexed = []
+    get_resp = session.get(f"{XRAY_API}/v1/binMgr/{bin_mgr_id}/repos")
+    if get_resp.status_code == 200:
+        try:
+            data = get_resp.json()
+            current_indexed = data.get("indexed_repos", [])
+            log("ℹ️", f"  Currently indexed: {[r.get('name','?') for r in current_indexed]}")
+        except Exception:
+            log("⚠️", f"  Could not parse indexed repos: {get_resp.text[:100]}")
     else:
-        log("⚠️", f"Xray indexing response: {resp.status_code} - {resp.text[:300]}")
-        log("ℹ️", "If repos were created with xrayIndex=true, indexing is already active")
-        return True
+        log("⚠️", f"  GET indexed repos: {get_resp.status_code} - {get_resp.text[:100]}")
+
+    # Build updated list - add remote, local, and cache repos
+    indexed_names = [r.get("name", "") for r in current_indexed]
+    new_repos = []
+    for repo_name, repo_type in [
+        (REMOTE_REPO, "remote"),
+        (LOCAL_REPO, "local"),
+        (f"{REMOTE_REPO}-cache", "local"),
+    ]:
+        if repo_name not in indexed_names:
+            new_repos.append({"name": repo_name, "type": repo_type, "pkg_type": "Maven"})
+            log("🔎", f"  Adding '{repo_name}' to Xray index scope...")
+        else:
+            log("ℹ️", f"  '{repo_name}' already in Xray index")
+
+    if new_repos:
+        all_repos = current_indexed + new_repos
+        put_resp = session.put(f"{XRAY_API}/v1/binMgr/{bin_mgr_id}/repos", json={
+            "indexed_repos": all_repos,
+            "non_indexed_repos": []
+        })
+        if put_resp.status_code in [200, 201, 204]:
+            log("✅", f"Xray index scope updated via PUT /binMgr/{bin_mgr_id}/repos!")
+        else:
+            log("⚠️", f"  PUT /binMgr/{bin_mgr_id}/repos: {put_resp.status_code} - {put_resp.text[:200]}")
+            # Fallback: enable xrayIndex via Artifactory repository update API
+            log("ℹ️", "  Fallback: enabling xrayIndex via Artifactory API...")
+            for repo_name in [REMOTE_REPO, LOCAL_REPO]:
+                upd = session.post(f"{ARTIFACTORY_API}/repositories/{repo_name}",
+                                   json={"xrayIndex": True})
+                if upd.status_code in [200, 201]:
+                    log("✅", f"  xrayIndex enabled: '{repo_name}' (Artifactory API)")
+                else:
+                    log("⚠️", f"  xrayIndex '{repo_name}': {upd.status_code} - {upd.text[:60]}")
+    else:
+        log("✅", "All repos already in Xray index scope!")
+    return True
 
 
 # ===========================
@@ -411,6 +466,37 @@ def precache_artifacts():
 
 
 # ===========================
+# STEP 7c: Trigger explicit per-artifact Xray scan
+# ===========================
+def trigger_artifact_scans():
+    """Explicitly trigger Xray scan for each test artifact using GAV component IDs."""
+    log("🔬", "STEP 7c: Triggering per-artifact Xray scans...")
+
+    components = [
+        ("log4j-core 2.14.1",         "gav://org.apache.logging.log4j:log4j-core:2.14.1"),
+        ("commons-collections 3.2.1",  "gav://commons-collections:commons-collections:3.2.1"),
+        ("jackson-databind 2.9.8",     "gav://com.fasterxml.jackson.core:jackson-databind:2.9.8"),
+        ("gson 2.10.1",                "gav://com.google.code.gson:gson:2.10.1"),
+        ("slf4j-api 2.0.9",            "gav://org.slf4j:slf4j-api:2.0.9"),
+    ]
+
+    for name, component_id in components:
+        resp = session.post(f"{XRAY_API}/v1/scanArtifact", json={"componentID": component_id})
+        if resp.status_code in [200, 201, 202]:
+            log("✅", f"  Scan triggered: {name} (HTTP {resp.status_code})")
+        else:
+            log("⚠️", f"  {name}: {resp.status_code} - {resp.text[:80]}")
+
+    # Trigger re-index on both remote repo and its cache
+    for repo in [REMOTE_REPO, f"{REMOTE_REPO}-cache"]:
+        try:
+            resp = session.post(f"{XRAY_API}/v1/index", json={"repo_name": repo})
+            log("ℹ️", f"  Re-index {repo}: HTTP {resp.status_code}")
+        except Exception as e:
+            log("⚠️", f"  Re-index {repo}: {e}")
+
+
+# ===========================
 # STEP 8: Verify Configuration
 # ===========================
 def verify_setup():
@@ -492,6 +578,7 @@ def main():
         create_watch,
         delete_cached_artifacts,
         precache_artifacts,
+        trigger_artifact_scans,
     ]
 
     for step_fn in steps:
