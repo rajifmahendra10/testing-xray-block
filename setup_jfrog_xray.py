@@ -272,7 +272,8 @@ def create_watch():
         "general_data": {
             "name": WATCH_NAME,
             "description": "Watch remote Maven repo - scan & block vulnerable artifacts from internet",
-            "active": True
+            "active": True,
+            "apply_on_existing_content": True
         },
         "project_resources": {
             "resources": [
@@ -359,6 +360,21 @@ def precache_artifacts():
             log("❌", f"  {name}: Error - {e}")
 
     log("✅", "All artifacts pre-cached! Xray will scan them during the wait period.")
+
+    # Force Xray to re-index the repos so scans apply on existing content
+    log("🔄", "Triggering Xray re-index on repositories...")
+    for repo_name in [REMOTE_REPO, LOCAL_REPO]:
+        try:
+            resp = session.post(
+                f"{XRAY_API}/v1/index",
+                json={"repo_name": repo_name}
+            )
+            if resp.status_code in [200, 201, 202]:
+                log("✅", f"  Re-index triggered for {repo_name}")
+            else:
+                log("⚠️", f"  Re-index {repo_name}: HTTP {resp.status_code} - {resp.text[:100]}")
+        except Exception as e:
+            log("⚠️", f"  Re-index {repo_name}: {e}")
 
 
 # ===========================

@@ -106,12 +106,13 @@ pipeline {
         stage('Wait for Xray Scan') {
             steps {
                 echo '================================================='
-                echo ' Waiting 120 seconds for Xray to scan pre-cached'
+                echo ' Waiting 180 seconds for Xray to scan pre-cached'
                 echo ' artifacts (setup sudah pre-cache artifacts)...'
+                echo ' (Cloud trial needs 3+ min for scan + apply policy)'
                 echo '================================================='
                 script {
                     if (isUnix()) {
-                        sh 'sleep 120'
+                        sh 'sleep 180'
                     } else {
                         bat 'ping -n 121 127.0.0.1 > nul'
                     }
@@ -142,7 +143,11 @@ pipeline {
                                 export JFROG_PASS=${JFROG_PASS}
                                 export XRAY_WAIT_SECS=30
                                 ${VENV_DIR}/bin/python test_xray_block.py 2>&1 | tee test_output.txt
-                                grep -q "PASSED" test_output.txt
+                                # Fail pipeline if any test FAILED
+                                if grep -q "FAILED" test_output.txt; then
+                                    echo "❌ Some tests FAILED - check test_output.txt"
+                                    exit 1
+                                fi
                             """
                         } else {
                             bat """
