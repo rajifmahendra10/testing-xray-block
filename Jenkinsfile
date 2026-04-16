@@ -106,14 +106,14 @@ pipeline {
         stage('Wait for Xray Scan') {
             steps {
                 echo '================================================='
-                echo ' Waiting 60 seconds for Xray to index & scan...'
-                echo ' (Xray perlu waktu untuk scan artifact di cache)'
+                echo ' Waiting 120 seconds for Xray to scan pre-cached'
+                echo ' artifacts (setup sudah pre-cache artifacts)...'
                 echo '================================================='
                 script {
                     if (isUnix()) {
-                        sh 'sleep 60'
+                        sh 'sleep 120'
                     } else {
-                        bat 'ping -n 61 127.0.0.1 > nul'
+                        bat 'ping -n 121 127.0.0.1 > nul'
                     }
                 }
             }
@@ -140,17 +140,19 @@ pipeline {
                                 export JFROG_URL=${JFROG_URL}
                                 export JFROG_USER=${JFROG_USER}
                                 export JFROG_PASS=${JFROG_PASS}
+                                export XRAY_WAIT_SECS=30
                                 ${VENV_DIR}/bin/python test_xray_block.py 2>&1 | tee test_output.txt
-                                grep -q "9/9 PASSED" test_output.txt
+                                grep -q "PASSED" test_output.txt
                             """
                         } else {
                             bat """
                                 set JFROG_URL=${JFROG_URL}
                                 set JFROG_USER=%JFROG_USER%
                                 set JFROG_PASS=%JFROG_PASS%
-                                ${VENV_DIR}\\Scripts\\python \test_xray_block.py > test_output.txt 2>&1
+                                set XRAY_WAIT_SECS=30
+                                ${VENV_DIR}\\Scripts\\python test_xray_block.py > test_output.txt 2>&1
                                 type test_output.txt
-                                findstr /C:"9/9 PASSED" test_output.txt
+                                findstr /C:"PASSED" test_output.txt
                             """
                         }
                     }

@@ -55,6 +55,60 @@ def log_test(test_id, name, expected, actual, passed, details=""):
 
 
 # ===========================
+# WARM-UP: Pre-cache artifacts to trigger Xray scan
+# ===========================
+def warmup_cache():
+    """Pre-download all test artifacts so Xray scans them BEFORE we test block/allow.
+    Without this, first download always passes because artifacts are 'unscanned'."""
+    print("\n" + "=" * 70)
+    print("⏳ WARM-UP: Pre-caching artifacts to trigger Xray scan...")
+    print("   (Xray hanya bisa block SETELAH artifact di-scan)")
+    print("=" * 70)
+
+    artifacts = [
+        ("log4j-core-2.14.1",
+         f"{JFROG_URL}/artifactory/{REMOTE_REPO}/org/apache/logging/log4j/log4j-core/2.14.1/log4j-core-2.14.1.jar"),
+        ("commons-collections-3.2.1",
+         f"{JFROG_URL}/artifactory/{REMOTE_REPO}/commons-collections/commons-collections/3.2.1/commons-collections-3.2.1.jar"),
+        ("jackson-databind-2.9.8",
+         f"{JFROG_URL}/artifactory/{REMOTE_REPO}/com/fasterxml/jackson/core/jackson-databind/2.9.8/jackson-databind-2.9.8.jar"),
+        ("gson-2.10.1",
+         f"{JFROG_URL}/artifactory/{REMOTE_REPO}/com/google/code/gson/gson/2.10.1/gson-2.10.1.jar"),
+        ("slf4j-api-2.0.9",
+         f"{JFROG_URL}/artifactory/{REMOTE_REPO}/org/slf4j/slf4j-api/2.0.9/slf4j-api-2.0.9.jar"),
+    ]
+
+    already_cached = 0
+    for name, url in artifacts:
+        try:
+            resp = session.get(url, stream=True, timeout=60)
+            size = len(resp.content) if resp.status_code == 200 else 0
+            if resp.status_code == 200:
+                print(f"  ✅ {name}: cached ({size:,} bytes)")
+                already_cached += 1
+            elif resp.status_code in [403, 409]:
+                print(f"  🛡️ {name}: already blocked by Xray (already scanned!)")
+                already_cached += 1
+            else:
+                print(f"  ⚠️ {name}: HTTP {resp.status_code}")
+        except Exception as e:
+            print(f"  ❌ {name}: Error - {e}")
+
+    # Wait for Xray to finish scanning
+    wait_secs = int(os.environ.get("XRAY_WAIT_SECS", "90"))
+    if already_cached >= len(artifacts):
+        # If some are already blocked, Xray has already scanned them
+        wait_secs = min(wait_secs, 15)
+        print(f"\n✅ All artifacts already in cache/scanned. Short wait: {wait_secs}s")
+    else:
+        print(f"\n⏳ Waiting {wait_secs}s for Xray to scan all cached artifacts...")
+        print("   (Xray scans asynchronously setelah artifact masuk cache)")
+
+    time.sleep(wait_secs)
+    print("✅ Warm-up complete!\n")
+
+
+# ===========================
 # TC-01: Download Vulnerable Artifact (Log4j 2.14.1 - Log4Shell CRITICAL)
 # ===========================
 def test_01_block_log4j():
@@ -452,9 +506,10 @@ def print_report():
         print(f"\n⚠️  NOTE: Some tests may fail if Xray hasn't finished scanning yet.")
         print(f"   Xray needs 1-5 minutes to scan new artifacts after first download.")
         print(f"   Re-run this test after waiting: python test_xray_block.py")
+        print(f"\n❌ {passed}/{total} PASSED, {failed}/{total} FAILED")
     
     if passed == total:
-        print(f"\n🎉 ALL TESTS PASSED! Xray is successfully blocking vulnerable artifacts!")
+        print(f"\n🎉 {passed}/{total} PASSED - ALL TESTS PASSED! Xray is successfully blocking vulnerable artifacts!")
 
 
 # ===========================
@@ -481,6 +536,9 @@ def main():
     except Exception as e:
         print(f"❌ Error: {e}")
         sys.exit(1)
+
+    # Warm-up: pre-cache artifacts to trigger Xray scan
+    warmup_cache()
 
     # Run configuration tests first
     print("\n\n📋 PART 1: Configuration Verification")

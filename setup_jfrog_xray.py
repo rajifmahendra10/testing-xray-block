@@ -325,7 +325,44 @@ def create_watch():
 
 
 # ===========================
-# STEP 7: Verify Configuration
+# STEP 7: Pre-cache Artifacts (Trigger Xray Scan)
+# ===========================
+def precache_artifacts():
+    """Download test artifacts to trigger Xray scanning BEFORE tests run.
+    This is critical: Xray only scans artifacts AFTER they are cached.
+    Without this step, first download always passes (unscanned = allowed)."""
+    log("📥", "STEP 7: Pre-caching test artifacts to trigger Xray scan...")
+    log("ℹ️", "Xray akan scan artifact ini secara async setelah masuk cache")
+
+    artifacts = [
+        ("log4j-core-2.14.1 (CRITICAL)",
+         f"{JFROG_URL}/artifactory/{REMOTE_REPO}/org/apache/logging/log4j/log4j-core/2.14.1/log4j-core-2.14.1.jar"),
+        ("commons-collections-3.2.1 (HIGH)",
+         f"{JFROG_URL}/artifactory/{REMOTE_REPO}/commons-collections/commons-collections/3.2.1/commons-collections-3.2.1.jar"),
+        ("jackson-databind-2.9.8 (CRITICAL)",
+         f"{JFROG_URL}/artifactory/{REMOTE_REPO}/com/fasterxml/jackson/core/jackson-databind/2.9.8/jackson-databind-2.9.8.jar"),
+        ("gson-2.10.1 (CLEAN)",
+         f"{JFROG_URL}/artifactory/{REMOTE_REPO}/com/google/code/gson/gson/2.10.1/gson-2.10.1.jar"),
+        ("slf4j-api-2.0.9 (CLEAN)",
+         f"{JFROG_URL}/artifactory/{REMOTE_REPO}/org/slf4j/slf4j-api/2.0.9/slf4j-api-2.0.9.jar"),
+    ]
+
+    for name, url in artifacts:
+        try:
+            resp = session.get(url, stream=True, timeout=60)
+            size = len(resp.content) if resp.status_code == 200 else 0
+            if resp.status_code == 200:
+                log("✅", f"  Cached: {name} ({size:,} bytes)")
+            else:
+                log("⚠️", f"  {name}: HTTP {resp.status_code}")
+        except Exception as e:
+            log("❌", f"  {name}: Error - {e}")
+
+    log("✅", "All artifacts pre-cached! Xray will scan them during the wait period.")
+
+
+# ===========================
+# STEP 8: Verify Configuration
 # ===========================
 def verify_setup():
     log("🔍", "STEP 7: Verifying configuration...")
@@ -404,15 +441,16 @@ def main():
         enable_xray_indexing,
         create_security_policy,
         create_watch,
+        precache_artifacts,
     ]
 
     for step_fn in steps:
         step_fn()
         time.sleep(1)  # Small delay between API calls
 
-    # Wait for Xray to process
-    log("⏳", "Waiting 10 seconds for Xray to initialize watches...")
-    time.sleep(10)
+    # Wait for Xray to process scans
+    log("⏳", "Waiting 15 seconds for Xray to start scanning pre-cached artifacts...")
+    time.sleep(15)
 
     # Verify
     verify_setup()
