@@ -106,15 +106,15 @@ pipeline {
         stage('Wait for Xray Scan') {
             steps {
                 echo '================================================='
-                echo ' Waiting 180 seconds for Xray to scan pre-cached'
-                echo ' artifacts (setup sudah pre-cache artifacts)...'
-                echo ' (Cloud trial needs 3+ min for scan + apply policy)'
+                echo ' Waiting 30 seconds initial buffer for Xray...'
+                echo ' (Main polling happens in test script - up to 5 min)'
+                echo ' '
                 echo '================================================='
                 script {
                     if (isUnix()) {
-                        sh 'sleep 180'
+                        sh 'sleep 30'
                     } else {
-                        bat 'ping -n 121 127.0.0.1 > nul'
+                        bat 'ping -n 31 127.0.0.1 > nul'
                     }
                 }
             }
@@ -141,7 +141,8 @@ pipeline {
                                 export JFROG_URL=${JFROG_URL}
                                 export JFROG_USER=${JFROG_USER}
                                 export JFROG_PASS=${JFROG_PASS}
-                                export XRAY_WAIT_SECS=30
+                                export XRAY_WAIT_SECS=10
+                                export XRAY_MAX_WAIT=300
                                 ${VENV_DIR}/bin/python test_xray_block.py 2>&1 | tee test_output.txt
                                 # Fail pipeline if any test FAILED
                                 if grep -q "FAILED" test_output.txt; then

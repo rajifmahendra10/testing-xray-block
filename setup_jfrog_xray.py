@@ -326,6 +326,39 @@ def create_watch():
 
 
 # ===========================
+# STEP 6b: Delete Cached Artifacts (Force Fresh Scan)
+# ===========================
+def delete_cached_artifacts():
+    """Delete cached vulnerable artifacts so Xray treats re-download as new scan event."""
+    log("🗑️", "STEP 6b: Deleting cached vulnerable artifacts from remote cache...")
+    log("ℹ️", "Forces Xray to re-scan when artifacts are re-downloaded")
+
+    cache_repo = f"{REMOTE_REPO}-cache"
+    paths = [
+        "org/apache/logging/log4j/log4j-core/2.14.1/log4j-core-2.14.1.jar",
+        "commons-collections/commons-collections/3.2.1/commons-collections-3.2.1.jar",
+        "com/fasterxml/jackson/core/jackson-databind/2.9.8/jackson-databind-2.9.8.jar",
+    ]
+
+    for path in paths:
+        artifact_name = path.split("/")[-1]
+        url = f"{JFROG_URL}/artifactory/{cache_repo}/{path}"
+        try:
+            resp = session.delete(url)
+            if resp.status_code in [200, 204]:
+                log("✅", f"  Deleted from cache: {artifact_name}")
+            elif resp.status_code == 404:
+                log("ℹ️", f"  Not in cache: {artifact_name}")
+            else:
+                log("⚠️", f"  Delete {artifact_name}: HTTP {resp.status_code} - {resp.text[:100]}")
+        except Exception as e:
+            log("⚠️", f"  Delete error: {e}")
+
+    log("⏳", "Waiting 5 seconds for cache cleanup...")
+    time.sleep(5)
+
+
+# ===========================
 # STEP 7: Pre-cache Artifacts (Trigger Xray Scan)
 # ===========================
 def precache_artifacts():
@@ -457,6 +490,7 @@ def main():
         enable_xray_indexing,
         create_security_policy,
         create_watch,
+        delete_cached_artifacts,
         precache_artifacts,
     ]
 

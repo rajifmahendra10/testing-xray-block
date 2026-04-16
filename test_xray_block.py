@@ -109,6 +109,102 @@ def warmup_cache():
 
 
 # ===========================
+# HELPER: Poll Xray until violations are detected
+# ===========================
+def wait_for_xray_ready(max_wait=300, interval=15):
+    """Poll Xray violations API until violations are detected or timeout.
+    This ensures Xray has finished scanning before we test blocking."""
+    print("\n" + "=" * 70)
+    print("⏳ POLLING: Waiting for Xray to finish scanning artifacts...")
+    print(f"   Max wait: {max_wait}s, checking every {interval}s")
+    print("=" * 70)
+
+    start = time.time()
+    attempt = 0
+
+    while time.time() - start < max_wait:
+        attempt += 1
+        elapsed = int(time.time() - start)
+
+        # Check violations API
+        payload = {
+            "filters": {
+                "watch_name": WATCH_NAME,
+                "min_severity": "High"
+            },
+            "pagination": {
+                "order_by": "severity",
+                "limit": 5,
+                "offset": 1
+            }
+        }
+
+        try:
+            resp = session.post(f"{XRAY_API}/v1/violations", json=payload)
+            if resp.status_code == 200:
+                data = resp.json()
+                total = data.get("total_violations", 0)
+                violations = data.get("violations", [])
+
+                if total > 0 or len(violations) > 0:
+                    print(f"\n  ✅ [{elapsed}s] Xray found {total} violations! Scan complete.")
+                    for v in violations[:3]:
+                        print(f"     → {v.get('cve', 'N/A')} | {v.get('severity', '?')}")
+                    return True
+                else:
+                    print(f"  ⏳ [{elapsed}s] Attempt {attempt}: No violations yet, waiting {interval}s...")
+            else:
+                print(f"  ⚠️ [{elapsed}s] Violations API returned {resp.status_code}")
+        except Exception as e:
+            print(f"  ⚠️ [{elapsed}s] Error: {e}")
+
+        # Every 3rd attempt, also check artifact summary for log4j
+        if attempt % 3 == 0:
+            try:
+                summary_payload = {
+                    "paths": [
+                        f"{REMOTE_REPO}-cache/org/apache/logging/log4j/log4j-core/2.14.1/log4j-core-2.14.1.jar"
+                    ]
+                }
+                sr = session.post(f"{XRAY_API}/v1/summary/artifact", json=summary_payload)
+                if sr.status_code == 200:
+                    sdata = sr.json()
+                    artifacts = sdata.get("artifacts", [])
+                    if artifacts:
+                        issues = artifacts[0].get("issues", [])
+                        if issues:
+                            print(f"  ✅ [{elapsed}s] log4j scan complete: {len(issues)} issues found!")
+                            return True
+                        else:
+                            print(f"  ℹ️ [{elapsed}s] log4j indexed but 0 issues yet (scan in progress)")
+            except:
+                pass
+
+        time.sleep(interval)
+
+    elapsed = int(time.time() - start)
+    print(f"\n  ⚠️ Timeout after {elapsed}s - Xray may need more time")
+    print(f"     Running tests anyway (block tests will retry individually)")
+    return False
+
+
+# ===========================
+# HELPER: Download with retry expecting block
+# ===========================
+def try_download_expecting_block(url, max_retries=3, retry_delay=20):
+    """Download artifact, expecting 403/409 block. Retries if not blocked yet."""
+    for attempt in range(max_retries):
+        resp = session.get(url, stream=True, timeout=60)
+        if resp.status_code in [403, 409]:
+            return resp
+        if attempt < max_retries - 1:
+            remaining = max_retries - attempt - 1
+            print(f"     ↻ Got HTTP {resp.status_code}, retrying in {retry_delay}s ({remaining} retries left)...")
+            time.sleep(retry_delay)
+    return resp
+
+
+# ===========================
 # TC-01: Download Vulnerable Artifact (Log4j 2.14.1 - Log4Shell CRITICAL)
 # ===========================
 def test_01_block_log4j():
@@ -122,7 +218,7 @@ def test_01_block_log4j():
     # Try to download through the remote repository
     url = f"{JFROG_URL}/artifactory/{REMOTE_REPO}/org/apache/logging/log4j/log4j-core/2.14.1/log4j-core-2.14.1.jar"
     
-    resp = session.get(url, stream=True)
+    resp = try_download_expecting_block(url)
     
     if resp.status_code == 403 or resp.status_code == 409:
         # BLOCKED by Xray - this is expected!
@@ -158,7 +254,7 @@ def test_02_block_commons_collections():
     
     url = f"{JFROG_URL}/artifactory/{REMOTE_REPO}/commons-collections/commons-collections/3.2.1/commons-collections-3.2.1.jar"
     
-    resp = session.get(url, stream=True)
+    resp = try_download_expecting_block(url)
     
     if resp.status_code in [403, 409]:
         log_test(test_id, name,
@@ -227,7 +323,7 @@ def test_04_block_jackson():
     
     url = f"{JFROG_URL}/artifactory/{REMOTE_REPO}/com/fasterxml/jackson/core/jackson-databind/2.9.8/jackson-databind-2.9.8.jar"
     
-    resp = session.get(url, stream=True)
+    resp = try_download_expecting_block(url)
     
     if resp.status_code in [403, 409]:
         log_test(test_id, name,
@@ -555,7 +651,15 @@ def main():
     test_03_allow_gson()       # Clean first
     time.sleep(2)
     test_05_allow_slf4j()      # Clean
-    time.sleep(2)
+
+    # Poll Xray until violations are detected before running block tests
+    max_wait = int(os.environ.get("XRAY_MAX_WAIT", "300"))
+    print("\n\n\U0001f4cb PART 2b: Waiting for Xray Scan Completion")
+    print("\u2500" * 40)
+    xray_ready = wait_for_xray_ready(max_wait=max_wait)
+    if not xray_ready:
+        print("\u26a0\ufe0f Xray scan not confirmed - block tests will retry individually")
+
     test_01_block_log4j()      # Vulnerable
     time.sleep(2)
     test_02_block_commons_collections()  # Vulnerable
