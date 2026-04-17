@@ -23,6 +23,7 @@ LOCAL_REPO = "maven-libs-local"
 VIRTUAL_REPO = "maven-virtual"
 POLICY_NAME = "block-critical-policy"
 WATCH_NAME = "maven-security-watch"
+DOWNLOAD_REPO = VIRTUAL_REPO
 
 ARTIFACTORY_API = f"{JFROG_URL}/artifactory/api"
 XRAY_API = f"{JFROG_URL}/xray/api"
@@ -67,15 +68,15 @@ def warmup_cache():
 
     artifacts = [
         ("log4j-core-2.14.1",
-         f"{JFROG_URL}/artifactory/{REMOTE_REPO}/org/apache/logging/log4j/log4j-core/2.14.1/log4j-core-2.14.1.jar"),
+         f"{JFROG_URL}/artifactory/{VIRTUAL_REPO}/org/apache/logging/log4j/log4j-core/2.14.1/log4j-core-2.14.1.jar"),
         ("commons-collections-3.2.1",
-         f"{JFROG_URL}/artifactory/{REMOTE_REPO}/commons-collections/commons-collections/3.2.1/commons-collections-3.2.1.jar"),
+         f"{JFROG_URL}/artifactory/{VIRTUAL_REPO}/commons-collections/commons-collections/3.2.1/commons-collections-3.2.1.jar"),
         ("jackson-databind-2.9.8",
-         f"{JFROG_URL}/artifactory/{REMOTE_REPO}/com/fasterxml/jackson/core/jackson-databind/2.9.8/jackson-databind-2.9.8.jar"),
+         f"{JFROG_URL}/artifactory/{VIRTUAL_REPO}/com/fasterxml/jackson/core/jackson-databind/2.9.8/jackson-databind-2.9.8.jar"),
         ("gson-2.10.1",
-         f"{JFROG_URL}/artifactory/{REMOTE_REPO}/com/google/code/gson/gson/2.10.1/gson-2.10.1.jar"),
+         f"{JFROG_URL}/artifactory/{VIRTUAL_REPO}/com/google/code/gson/gson/2.10.1/gson-2.10.1.jar"),
         ("slf4j-api-2.0.9",
-         f"{JFROG_URL}/artifactory/{REMOTE_REPO}/org/slf4j/slf4j-api/2.0.9/slf4j-api-2.0.9.jar"),
+         f"{JFROG_URL}/artifactory/{VIRTUAL_REPO}/org/slf4j/slf4j-api/2.0.9/slf4j-api-2.0.9.jar"),
     ]
 
     already_cached = 0
@@ -224,7 +225,7 @@ def test_01_block_log4j():
     print(f"   Downloading log4j-core-2.14.1.jar through remote repo...")
     
     # Try to download through the remote repository
-    url = f"{JFROG_URL}/artifactory/{REMOTE_REPO}/org/apache/logging/log4j/log4j-core/2.14.1/log4j-core-2.14.1.jar"
+    url = f"{JFROG_URL}/artifactory/{VIRTUAL_REPO}/org/apache/logging/log4j/log4j-core/2.14.1/log4j-core-2.14.1.jar"
     
     resp = try_download_expecting_block(url)
     
@@ -260,7 +261,7 @@ def test_02_block_commons_collections():
     
     print(f"\n🧪 {test_id}: {name}")
     
-    url = f"{JFROG_URL}/artifactory/{REMOTE_REPO}/commons-collections/commons-collections/3.2.1/commons-collections-3.2.1.jar"
+    url = f"{JFROG_URL}/artifactory/{VIRTUAL_REPO}/commons-collections/commons-collections/3.2.1/commons-collections-3.2.1.jar"
     
     resp = try_download_expecting_block(url)
     
@@ -294,7 +295,7 @@ def test_03_allow_gson():
     
     print(f"\n🧪 {test_id}: {name}")
     
-    url = f"{JFROG_URL}/artifactory/{REMOTE_REPO}/com/google/code/gson/gson/2.10.1/gson-2.10.1.jar"
+    url = f"{JFROG_URL}/artifactory/{VIRTUAL_REPO}/com/google/code/gson/gson/2.10.1/gson-2.10.1.jar"
     
     resp = session.get(url, stream=True)
     
@@ -329,7 +330,7 @@ def test_04_block_jackson():
     
     print(f"\n🧪 {test_id}: {name}")
     
-    url = f"{JFROG_URL}/artifactory/{REMOTE_REPO}/com/fasterxml/jackson/core/jackson-databind/2.9.8/jackson-databind-2.9.8.jar"
+    url = f"{JFROG_URL}/artifactory/{VIRTUAL_REPO}/com/fasterxml/jackson/core/jackson-databind/2.9.8/jackson-databind-2.9.8.jar"
     
     resp = try_download_expecting_block(url)
     
@@ -363,7 +364,7 @@ def test_05_allow_slf4j():
     
     print(f"\n🧪 {test_id}: {name}")
     
-    url = f"{JFROG_URL}/artifactory/{REMOTE_REPO}/org/slf4j/slf4j-api/2.0.9/slf4j-api-2.0.9.jar"
+    url = f"{JFROG_URL}/artifactory/{VIRTUAL_REPO}/org/slf4j/slf4j-api/2.0.9/slf4j-api-2.0.9.jar"
     
     resp = session.get(url, stream=True)
     
