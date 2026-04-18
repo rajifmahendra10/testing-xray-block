@@ -22,7 +22,7 @@ REMOTE_REPO = "maven-central-remote"
 LOCAL_REPO = "maven-libs-local"
 VIRTUAL_REPO = "maven-virtual"
 POLICY_NAME = "block-critical-policy"
-WATCH_NAME = "maven-security-watch"
+WATCH_NAME = "maven-security-watch-2"
 DOWNLOAD_REPO = VIRTUAL_REPO
 
 ARTIFACTORY_API = f"{JFROG_URL}/artifactory/api"
