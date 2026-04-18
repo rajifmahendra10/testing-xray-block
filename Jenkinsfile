@@ -67,38 +67,38 @@ pipeline {
         // ================================================================
         // STAGE 3: Setup JFrog (Repos + Policy + Watch)
         // ================================================================
-        stage('JFrog Setup') {
-            steps {
-                echo '================================================='
-                echo ' Running setup_jfrog_xray.py...'
-                echo ' Creating: repos, security policy, Xray watch'
-                echo '================================================='
-                script {
-                    // Credentials dipass sebagai environment variable — AMAN, tidak muncul di log
-                    withCredentials([usernamePassword(
-                        credentialsId: 'jfrog-rahman-credential',
-                        usernameVariable: 'JFROG_USER',
-                        passwordVariable: 'JFROG_PASS'
-                    )]) {
-                        if (isUnix()) {
-                            sh """
-                                export JFROG_URL=${JFROG_URL}
-                                export JFROG_USER=${JFROG_USER}
-                                export JFROG_PASS=${JFROG_PASS}
-                                ${VENV_DIR}/bin/python setup_jfrog_xray.py
-                            """
-                        } else {
-                            bat """
-                                set JFROG_URL=${JFROG_URL}
-                                set JFROG_USER=%JFROG_USER%
-                                set JFROG_PASS=%JFROG_PASS%
-                                ${VENV_DIR}\\Scripts\\python setup_jfrog_xray.py
-                            """
-                        }
-                    }
-                }
-            }
-        }
+        // stage('JFrog Setup') {
+        //     steps {
+        //         echo '================================================='
+        //         echo ' Running setup_jfrog_xray.py...'
+        //         echo ' Creating: repos, security policy, Xray watch'
+        //         echo '================================================='
+        //         script {
+        //             // Credentials dipass sebagai environment variable — AMAN, tidak muncul di log
+        //             withCredentials([usernamePassword(
+        //                 credentialsId: 'jfrog-rahman-credential',
+        //                 usernameVariable: 'JFROG_USER',
+        //                 passwordVariable: 'JFROG_PASS'
+        //             )]) {
+        //                 if (isUnix()) {
+        //                     sh """
+        //                         export JFROG_URL=${JFROG_URL}
+        //                         export JFROG_USER=${JFROG_USER}
+        //                         export JFROG_PASS=${JFROG_PASS}
+        //                         ${VENV_DIR}/bin/python setup_jfrog_xray.py
+        //                     """
+        //                 } else {
+        //                     bat """
+        //                         set JFROG_URL=${JFROG_URL}
+        //                         set JFROG_USER=%JFROG_USER%
+        //                         set JFROG_PASS=%JFROG_PASS%
+        //                         ${VENV_DIR}\\Scripts\\python setup_jfrog_xray.py
+        //                     """
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
 
         // ================================================================
         // STAGE 4: Wait for Xray Indexing
