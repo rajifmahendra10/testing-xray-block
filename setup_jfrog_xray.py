@@ -5,7 +5,7 @@ import time
 import urllib3
 import sys
 import os
-
+import datetime
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -13,7 +13,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # CONFIGURATION
 # Reads from environment variables if set (Jenkins), else falls back to defaults
 # ===========================
-JFROG_URL  = os.environ.get("JFROG_URL",  "https://trial789.jfrog.io")
+JFROG_URL = os.environ.get("JFROG_URL", "https://trial789.jfrog.io")
 JFROG_USER = os.environ.get("JFROG_USER", "abdul.effendi@izeno.com")
 JFROG_PASS = os.environ.get("JFROG_PASS", "JfR06!2026")
 
@@ -25,6 +25,18 @@ VIRTUAL_REPO = "maven-virtual"
 # Xray configuration
 POLICY_NAME = "block-critical-policy"
 WATCH_NAME = "maven-security-watch"
+
+# Recipients for watch notifications
+# Example:
+# export WATCH_RECIPIENTS="abdul.effendi@izeno.com,security-team@izeno.com"
+WATCH_RECIPIENTS = [
+    x.strip()
+    for x in os.environ.get("WATCH_RECIPIENTS", "abdul.effendi@izeno.com").split(",")
+    if x.strip()
+]
+
+# How far back to apply existing content
+APPLY_EXISTING_DAYS_BACK = int(os.environ.get("APPLY_EXISTING_DAYS_BACK", "30"))
 
 # API URLs
 ARTIFACTORY_API = f"{JFROG_URL}/artifactory/api"
@@ -43,16 +55,19 @@ def log(emoji, message):
 
 def log_result(response, success_msg, fail_msg):
     if response.status_code in [200, 201]:
-        log("✅", f"{success_msg}")
+        log("✅", success_msg)
+        return True
+    elif response.status_code == 204:
+        log("✅", success_msg)
         return True
     elif response.status_code == 409:
         log("⚠️", f"Already exists - skipping ({response.status_code})")
         return True
     elif response.status_code == 400 and "already exists" in response.text.lower():
-        log("⚠️", f"Already exists - skipping")
+        log("⚠️", "Already exists - skipping")
         return True
     else:
-        log("❌", f"{fail_msg}")
+        log("❌", fail_msg)
         print(f"   Status: {response.status_code}")
         print(f"   Response: {response.text[:500]}")
         return False
@@ -75,7 +90,7 @@ def create_remote_repo():
         "handleReleases": True,
         "handleSnapshots": False,
         "suppressPomConsistencyChecks": True,
-        "xrayIndex": True,               # Enable Xray indexing!
+        "xrayIndex": True,
         "blockMismatchingMimeTypes": True,
         "contentSynchronisation": {
             "enabled": False
@@ -90,9 +105,9 @@ def create_remote_repo():
         log("⚠️", "Already exists - enabling xrayIndex on existing repo...")
         upd = session.post(f"{ARTIFACTORY_API}/repositories/{REMOTE_REPO}", json={"xrayIndex": True})
         if upd.status_code in [200, 201]:
-            log("✅", f"  xrayIndex=True applied to '{REMOTE_REPO}'")
+            log("✅", f"xrayIndex=True applied to '{REMOTE_REPO}'")
         else:
-            log("⚠️", f"  xrayIndex update: {upd.status_code} - {upd.text[:80]}")
+            log("⚠️", f"xrayIndex update: {upd.status_code} - {upd.text[:120]}")
         return True
     else:
         log("❌", "Failed to create remote repo")
@@ -127,9 +142,9 @@ def create_local_repo():
         log("⚠️", "Already exists - enabling xrayIndex on existing repo...")
         upd = session.post(f"{ARTIFACTORY_API}/repositories/{LOCAL_REPO}", json={"xrayIndex": True})
         if upd.status_code in [200, 201]:
-            log("✅", f"  xrayIndex=True applied to '{LOCAL_REPO}'")
+            log("✅", f"xrayIndex=True applied to '{LOCAL_REPO}'")
         else:
-            log("⚠️", f"  xrayIndex update: {upd.status_code} - {upd.text[:80]}")
+            log("⚠️", f"xrayIndex update: {upd.status_code} - {upd.text[:120]}")
         return True
     else:
         log("❌", "Failed to create local repo")
@@ -157,9 +172,11 @@ def create_virtual_repo():
     }
 
     resp = session.put(f"{ARTIFACTORY_API}/repositories/{VIRTUAL_REPO}", json=payload)
-    return log_result(resp,
-                      f"Virtual repo '{VIRTUAL_REPO}' created!",
-                      f"Failed to create virtual repo")
+    return log_result(
+        resp,
+        f"Virtual repo '{VIRTUAL_REPO}' created!",
+        "Failed to create virtual repo"
+    )
 
 
 # ===========================
@@ -168,7 +185,6 @@ def create_virtual_repo():
 def enable_xray_indexing():
     log("🔍", "STEP 4: Enabling Xray indexing on repositories...")
 
-    # Get bin_mgr_id from Xray
     bin_mgr_id = "default"
     try:
         bm_resp = session.get(f"{XRAY_API}/v1/binMgr")
@@ -178,26 +194,25 @@ def enable_xray_indexing():
                 bin_mgr_id = bm_data[0].get("id", "default")
             elif isinstance(bm_data, dict):
                 bin_mgr_id = bm_data.get("id", bm_data.get("bin_mgr_id", "default"))
-        log("ℹ️", f"  Binary Manager ID: {bin_mgr_id}")
+        log("ℹ️", f"Binary Manager ID: {bin_mgr_id}")
     except Exception as e:
-        log("⚠️", f"  Could not get binary manager: {e}")
+        log("⚠️", f"Could not get binary manager: {e}")
 
-    # GET current indexed repos to avoid overwriting existing ones
     current_indexed = []
     get_resp = session.get(f"{XRAY_API}/v1/binMgr/{bin_mgr_id}/repos")
     if get_resp.status_code == 200:
         try:
             data = get_resp.json()
             current_indexed = data.get("indexed_repos", [])
-            log("ℹ️", f"  Currently indexed: {[r.get('name','?') for r in current_indexed]}")
+            log("ℹ️", f"Currently indexed: {[r.get('name', '?') for r in current_indexed]}")
         except Exception:
-            log("⚠️", f"  Could not parse indexed repos: {get_resp.text[:100]}")
+            log("⚠️", f"Could not parse indexed repos: {get_resp.text[:120]}")
     else:
-        log("⚠️", f"  GET indexed repos: {get_resp.status_code} - {get_resp.text[:100]}")
+        log("⚠️", f"GET indexed repos: {get_resp.status_code} - {get_resp.text[:120]}")
 
-    # Build updated list - add remote, local, and cache repos
     indexed_names = [r.get("name", "") for r in current_indexed]
     new_repos = []
+
     for repo_name, repo_type in [
         (REMOTE_REPO, "remote"),
         (LOCAL_REPO, "local"),
@@ -205,40 +220,45 @@ def enable_xray_indexing():
     ]:
         if repo_name not in indexed_names:
             new_repos.append({"name": repo_name, "type": repo_type, "pkg_type": "Maven"})
-            log("🔎", f"  Adding '{repo_name}' to Xray index scope...")
+            log("🔎", f"Adding '{repo_name}' to Xray index scope...")
         else:
-            log("ℹ️", f"  '{repo_name}' already in Xray index")
+            log("ℹ️", f"'{repo_name}' already in Xray index")
 
     if new_repos:
         all_repos = current_indexed + new_repos
-        put_resp = session.put(f"{XRAY_API}/v1/binMgr/{bin_mgr_id}/repos", json={
-            "indexed_repos": all_repos,
-            "non_indexed_repos": []
-        })
+        put_resp = session.put(
+            f"{XRAY_API}/v1/binMgr/{bin_mgr_id}/repos",
+            json={
+                "indexed_repos": all_repos,
+                "non_indexed_repos": []
+            }
+        )
         if put_resp.status_code in [200, 201, 204]:
             log("✅", f"Xray index scope updated via PUT /binMgr/{bin_mgr_id}/repos!")
         else:
-            log("⚠️", f"  PUT /binMgr/{bin_mgr_id}/repos: {put_resp.status_code} - {put_resp.text[:200]}")
-            # Fallback: enable xrayIndex via Artifactory repository update API
-            log("ℹ️", "  Fallback: enabling xrayIndex via Artifactory API...")
+            log("⚠️", f"PUT /binMgr/{bin_mgr_id}/repos: {put_resp.status_code} - {put_resp.text[:200]}")
+            log("ℹ️", "Fallback: enabling xrayIndex via Artifactory API...")
             for repo_name in [REMOTE_REPO, LOCAL_REPO]:
-                upd = session.post(f"{ARTIFACTORY_API}/repositories/{repo_name}",
-                                   json={"xrayIndex": True})
+                upd = session.post(
+                    f"{ARTIFACTORY_API}/repositories/{repo_name}",
+                    json={"xrayIndex": True}
+                )
                 if upd.status_code in [200, 201]:
-                    log("✅", f"  xrayIndex enabled: '{repo_name}' (Artifactory API)")
+                    log("✅", f"xrayIndex enabled: '{repo_name}' (Artifactory API)")
                 else:
-                    log("⚠️", f"  xrayIndex '{repo_name}': {upd.status_code} - {upd.text[:60]}")
+                    log("⚠️", f"xrayIndex '{repo_name}': {upd.status_code} - {upd.text[:80]}")
     else:
         log("✅", "All repos already in Xray index scope!")
+
     return True
 
 
 # ===========================
-# STEP 5: Create Security Policy 
+# STEP 5: Create Security Policy
 # ===========================
 def create_security_policy():
     log("🛡️", f"STEP 5: Creating Security Policy '{POLICY_NAME}'...")
-    log("🚫", "Policy: Block download jika severity >= Critical")
+    log("🚫", "Policy: Block download jika severity >= Critical/High")
 
     payload = {
         "name": POLICY_NAME,
@@ -255,8 +275,8 @@ def create_security_policy():
                     "webhooks": [],
                     "mails": [],
                     "block_download": {
-                        "unscanned": False,   # Allow unscanned (first-time download OK)
-                        "active": True         # Block download = ON for scanned vulns
+                        "unscanned": False,
+                        "active": True
                     },
                     "block_release_bundle_distribution": False,
                     "fail_build": True,
@@ -276,7 +296,7 @@ def create_security_policy():
                     "mails": [],
                     "block_download": {
                         "unscanned": False,
-                        "active": True        # Also block High severity
+                        "active": True
                     },
                     "block_release_bundle_distribution": False,
                     "fail_build": True,
@@ -288,29 +308,58 @@ def create_security_policy():
         ]
     }
 
-    # Try to create, if exists try update
     resp = session.post(f"{XRAY_API}/v2/policies", json=payload)
 
     if resp.status_code == 409 or (resp.status_code == 400 and "already exists" in resp.text.lower()):
         log("⚠️", "Policy already exists, updating...")
         resp = session.put(f"{XRAY_API}/v2/policies/{POLICY_NAME}", json=payload)
 
-    return log_result(resp,
-                      f"Security Policy '{POLICY_NAME}' created!\n"
-                      f"   → Rule 1: Block Critical vulnerabilities (block download)\n"
-                      f"   → Rule 2: Block High vulnerabilities (block download)\n"
-                      f"   → Unscanned artifacts: BLOCKED",
-                      f"Failed to create security policy")
+    return log_result(
+        resp,
+        f"Security Policy '{POLICY_NAME}' created/updated!\n"
+        f"   → Rule 1: Block Critical vulnerabilities\n"
+        f"   → Rule 2: Block High vulnerabilities\n"
+        f"   → Notify watch recipients: ON",
+        "Failed to create/update security policy"
+    )
 
 
 # ===========================
-# STEP 6: Create Watch
+# STEP 6a: Apply Watch on Existing Content
+# ===========================
+def apply_watch_on_existing_content(days_back=30):
+    log("🔄", f"STEP 6a: Applying watch '{WATCH_NAME}' on existing content...")
+
+    end_date = datetime.datetime.utcnow().date()
+    start_date = end_date - datetime.timedelta(days=days_back)
+
+    payload = {
+        "watch_names": [WATCH_NAME],
+        "date_range": {
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat()
+        }
+    }
+
+    resp = session.post(f"{XRAY_API}/v1/applyWatch", json=payload)
+
+    if resp.status_code in [200, 201, 202]:
+        log("✅", f"Apply on existing content accepted for '{WATCH_NAME}'")
+        log("ℹ️", f"Date range: {start_date.isoformat()} -> {end_date.isoformat()}")
+        return True
+
+    log("⚠️", f"Apply on existing content failed: HTTP {resp.status_code}")
+    print(f"   Response: {resp.text[:500]}")
+    return False
+
+
+# ===========================
+# STEP 6: Create / Update Watch
 # ===========================
 def create_watch():
     log("👁️", f"STEP 6: Creating Watch '{WATCH_NAME}'...")
-    log("🔗", f"Watch = link antara Policy '{POLICY_NAME}' dan Repo '{REMOTE_REPO}'")
+    log("🔗", f"Watch = link antara Policy '{POLICY_NAME}' dan repos '{REMOTE_REPO}', '{LOCAL_REPO}'")
 
-    # First, get bin_mgr_id
     bin_mgr_resp = session.get(f"{XRAY_API}/v1/binMgr")
     bin_mgr_id = "default"
     if bin_mgr_resp.status_code == 200:
@@ -318,10 +367,8 @@ def create_watch():
         if isinstance(bin_data, list) and len(bin_data) > 0:
             bin_mgr_id = bin_data[0].get("id", "default")
         elif isinstance(bin_data, dict):
-            managers = bin_data.get("bin_mgr_id", bin_data.get("binMgrId", "default"))
-            if managers:
-                bin_mgr_id = managers
-        log("ℹ️", f"  Binary Manager ID: {bin_mgr_id}")
+            bin_mgr_id = bin_data.get("id", bin_data.get("bin_mgr_id", "default"))
+        log("ℹ️", f"Binary Manager ID: {bin_mgr_id}")
 
     payload = {
         "general_data": {
@@ -363,7 +410,8 @@ def create_watch():
                 "name": POLICY_NAME,
                 "type": "security"
             }
-        ]
+        ],
+        "watch_recipients": WATCH_RECIPIENTS
     }
 
     resp = session.post(f"{XRAY_API}/v2/watches", json=payload)
@@ -372,19 +420,25 @@ def create_watch():
         log("⚠️", "Watch already exists, updating...")
         resp = session.put(f"{XRAY_API}/v2/watches/{WATCH_NAME}", json=payload)
 
-    return log_result(resp,
-                      f"Watch '{WATCH_NAME}' created!\n"
-                      f"   → Monitoring: {REMOTE_REPO}, {LOCAL_REPO}\n"
-                      f"   → Policy: {POLICY_NAME}\n"
-                      f"   → Action: Block Critical & High on download",
-                      f"Failed to create watch")
+    ok = log_result(
+        resp,
+        f"Watch '{WATCH_NAME}' created/updated!\n"
+        f"   → Monitoring: {REMOTE_REPO}, {LOCAL_REPO}\n"
+        f"   → Policy: {POLICY_NAME}\n"
+        f"   → Recipients: {', '.join(WATCH_RECIPIENTS)}",
+        "Failed to create/update watch"
+    )
+
+    if ok:
+        apply_watch_on_existing_content(APPLY_EXISTING_DAYS_BACK)
+
+    return ok
 
 
 # ===========================
 # STEP 6b: Delete Cached Artifacts (Force Fresh Scan)
 # ===========================
 def delete_cached_artifacts():
-    """Delete cached vulnerable artifacts so Xray treats re-download as new scan event."""
     log("🗑️", "STEP 6b: Deleting cached vulnerable artifacts from remote cache...")
     log("ℹ️", "Forces Xray to re-scan when artifacts are re-downloaded")
 
@@ -400,14 +454,14 @@ def delete_cached_artifacts():
         url = f"{JFROG_URL}/artifactory/{cache_repo}/{path}"
         try:
             resp = session.delete(url)
-            if resp.status_code in [200, 204]:
-                log("✅", f"  Deleted from cache: {artifact_name}")
+            if resp.status_code in [200, 202, 204]:
+                log("✅", f"Deleted from cache: {artifact_name}")
             elif resp.status_code == 404:
-                log("ℹ️", f"  Not in cache: {artifact_name}")
+                log("ℹ️", f"Not in cache: {artifact_name}")
             else:
-                log("⚠️", f"  Delete {artifact_name}: HTTP {resp.status_code} - {resp.text[:100]}")
+                log("⚠️", f"Delete {artifact_name}: HTTP {resp.status_code} - {resp.text[:120]}")
         except Exception as e:
-            log("⚠️", f"  Delete error: {e}")
+            log("⚠️", f"Delete error: {e}")
 
     log("⏳", "Waiting 5 seconds for cache cleanup...")
     time.sleep(5)
@@ -417,9 +471,6 @@ def delete_cached_artifacts():
 # STEP 7: Pre-cache Artifacts (Trigger Xray Scan)
 # ===========================
 def precache_artifacts():
-    """Download test artifacts to trigger Xray scanning BEFORE tests run.
-    This is critical: Xray only scans artifacts AFTER they are cached.
-    Without this step, first download always passes (unscanned = allowed)."""
     log("📥", "STEP 7: Pre-caching test artifacts to trigger Xray scan...")
     log("ℹ️", "Xray akan scan artifact ini secara async setelah masuk cache")
 
@@ -441,68 +492,63 @@ def precache_artifacts():
             resp = session.get(url, stream=True, timeout=60)
             size = len(resp.content) if resp.status_code == 200 else 0
             if resp.status_code == 200:
-                log("✅", f"  Cached: {name} ({size:,} bytes)")
+                log("✅", f"Cached: {name} ({size:,} bytes)")
+            elif resp.status_code in [403, 409]:
+                log("🛡️", f"Blocked already: {name} ({resp.status_code})")
             else:
-                log("⚠️", f"  {name}: HTTP {resp.status_code}")
+                log("⚠️", f"{name}: HTTP {resp.status_code}")
         except Exception as e:
-            log("❌", f"  {name}: Error - {e}")
+            log("❌", f"{name}: Error - {e}")
 
     log("✅", "All artifacts pre-cached! Xray will scan them during the wait period.")
 
-    # Force Xray to re-index the repos so scans apply on existing content
     log("🔄", "Triggering Xray re-index on repositories...")
     for repo_name in [REMOTE_REPO, LOCAL_REPO]:
         try:
-            resp = session.post(
-                f"{XRAY_API}/v1/index",
-                json={"repo_name": repo_name}
-            )
+            resp = session.post(f"{XRAY_API}/v1/index", json={"repo_name": repo_name})
             if resp.status_code in [200, 201, 202]:
-                log("✅", f"  Re-index triggered for {repo_name}")
+                log("✅", f"Re-index triggered for {repo_name}")
             else:
-                log("⚠️", f"  Re-index {repo_name}: HTTP {resp.status_code} - {resp.text[:100]}")
+                log("⚠️", f"Re-index {repo_name}: HTTP {resp.status_code} - {resp.text[:100]}")
         except Exception as e:
-            log("⚠️", f"  Re-index {repo_name}: {e}")
+            log("⚠️", f"Re-index {repo_name}: {e}")
 
 
 # ===========================
 # STEP 7c: Trigger explicit per-artifact Xray scan
 # ===========================
 def trigger_artifact_scans():
-    """Explicitly trigger Xray scan for each test artifact using GAV component IDs."""
     log("🔬", "STEP 7c: Triggering per-artifact Xray scans...")
 
     components = [
-        ("log4j-core 2.14.1",         "gav://org.apache.logging.log4j:log4j-core:2.14.1"),
-        ("commons-collections 3.2.1",  "gav://commons-collections:commons-collections:3.2.1"),
-        ("jackson-databind 2.9.8",     "gav://com.fasterxml.jackson.core:jackson-databind:2.9.8"),
-        ("gson 2.10.1",                "gav://com.google.code.gson:gson:2.10.1"),
-        ("slf4j-api 2.0.9",            "gav://org.slf4j:slf4j-api:2.0.9"),
+        ("log4j-core 2.14.1", "gav://org.apache.logging.log4j:log4j-core:2.14.1"),
+        ("commons-collections 3.2.1", "gav://commons-collections:commons-collections:3.2.1"),
+        ("jackson-databind 2.9.8", "gav://com.fasterxml.jackson.core:jackson-databind:2.9.8"),
+        ("gson 2.10.1", "gav://com.google.code.gson:gson:2.10.1"),
+        ("slf4j-api 2.0.9", "gav://org.slf4j:slf4j-api:2.0.9"),
     ]
 
     for name, component_id in components:
         resp = session.post(f"{XRAY_API}/v1/scanArtifact", json={"componentID": component_id})
         if resp.status_code in [200, 201, 202]:
-            log("✅", f"  Scan triggered: {name} (HTTP {resp.status_code})")
+            log("✅", f"Scan triggered: {name} (HTTP {resp.status_code})")
         else:
-            log("⚠️", f"  {name}: {resp.status_code} - {resp.text[:80]}")
+            log("⚠️", f"{name}: {resp.status_code} - {resp.text[:120]}")
 
-    # Trigger re-index on both remote repo and its cache
     for repo in [REMOTE_REPO, f"{REMOTE_REPO}-cache"]:
         try:
             resp = session.post(f"{XRAY_API}/v1/index", json={"repo_name": repo})
-            log("ℹ️", f"  Re-index {repo}: HTTP {resp.status_code}")
+            log("ℹ️", f"Re-index {repo}: HTTP {resp.status_code}")
         except Exception as e:
-            log("⚠️", f"  Re-index {repo}: {e}")
+            log("⚠️", f"Re-index {repo}: {e}")
 
 
 # ===========================
 # STEP 8: Verify Configuration
 # ===========================
 def verify_setup():
-    log("🔍", "STEP 7: Verifying configuration...")
+    log("🔍", "STEP 8: Verifying configuration...")
 
-    # Check repos
     print("\n--- Repositories ---")
     for repo in [REMOTE_REPO, LOCAL_REPO, VIRTUAL_REPO]:
         resp = session.get(f"{ARTIFACTORY_API}/repositories/{repo}")
@@ -512,7 +558,6 @@ def verify_setup():
         else:
             print(f"  ❌ {repo} - NOT FOUND")
 
-    # Check policy
     print("\n--- Xray Policy ---")
     resp = session.get(f"{XRAY_API}/v2/policies/{POLICY_NAME}")
     if resp.status_code == 200:
@@ -524,22 +569,35 @@ def verify_setup():
             block = rule.get("actions", {}).get("block_download", {}).get("active", False)
             print(f"     → Rule: {rule['name']} | Min Severity: {severity} | Block Download: {block}")
     else:
-        print(f"  ❌ Policy not found")
+        print("  ❌ Policy not found")
 
-    # Check watch
     print("\n--- Xray Watch ---")
     resp = session.get(f"{XRAY_API}/v2/watches/{WATCH_NAME}")
     if resp.status_code == 200:
         data = resp.json()
         print(f"  ✅ Watch: {WATCH_NAME}")
+
+        general_data = data.get("general_data", {})
         resources = data.get("project_resources", {}).get("resources", [])
+        policies = data.get("assigned_policies", [])
+        recipients = data.get("watch_recipients", [])
+
+        print(f"     → Active: {general_data.get('active', False)}")
+        print(f"     → Apply on existing content: {general_data.get('apply_on_existing_content', False)}")
+
         for r in resources:
             print(f"     → Monitoring: {r['name']} ({r['type']})")
-        policies = data.get("assigned_policies", [])
+
         for p in policies:
             print(f"     → Policy: {p['name']} ({p['type']})")
+
+        if recipients:
+            for recipient in recipients:
+                print(f"     → Recipient: {recipient}")
+        else:
+            print("     → Recipient: none")
     else:
-        print(f"  ❌ Watch not found")
+        print("  ❌ Watch not found")
 
 
 # ===========================
@@ -551,11 +609,11 @@ def main():
     print("=" * 70)
     print(f"\n📍 JFrog URL: {JFROG_URL}")
     print(f"👤 User: {JFROG_USER}")
-    print(f"\n🎯 Goal: Artifact dari internet di-SCAN dulu,")
-    print(f"   CRITICAL/HIGH → BLOCK ❌")
-    print(f"   CLEAN → ALLOW ✅")
+    print(f"📧 Watch Recipients: {', '.join(WATCH_RECIPIENTS)}")
+    print("\n🎯 Goal: Artifact dari internet di-SCAN dulu,")
+    print("   CRITICAL/HIGH → BLOCK ❌")
+    print("   CLEAN → ALLOW ✅")
 
-    # Test connection first
     log("🔌", "Testing connection to JFrog...")
     try:
         resp = session.get(f"{ARTIFACTORY_API}/system/ping")
@@ -568,7 +626,6 @@ def main():
         log("❌", f"Connection error: {e}")
         sys.exit(1)
 
-    # Execute all steps
     steps = [
         create_remote_repo,
         create_local_repo,
@@ -582,14 +639,15 @@ def main():
     ]
 
     for step_fn in steps:
-        step_fn()
-        time.sleep(1)  # Small delay between API calls
+        ok = step_fn()
+        if ok is False:
+            log("❌", f"Stopping due to failure in step: {step_fn.__name__}")
+            sys.exit(1)
+        time.sleep(1)
 
-    # Wait for Xray to process scans
     log("⏳", "Waiting 15 seconds for Xray to start scanning pre-cached artifacts...")
     time.sleep(15)
 
-    # Verify
     verify_setup()
 
     print("\n" + "=" * 70)
@@ -606,26 +664,23 @@ def main():
    │       ↓                                              │
    │  ┌─── Policy: {POLICY_NAME:<30} ───┐  │
    │  │                                              │    │
-   │  │  CRITICAL/HIGH? → ❌ BLOCK (tidak masuk)    │    │
-   │  │  CLEAN?         → ✅ ALLOW (masuk ke cache) │    │
-   │  │                                              │    │
+   │  │  CRITICAL/HIGH? → ❌ BLOCK                   │    │
+   │  │  CLEAN?         → ✅ ALLOW                  │    │
    │  └──────────────────────────────────────────────┘    │
-   │       ↓ (if clean)                                   │
+   │       ↓                                              │
    │  Virtual Repo: {VIRTUAL_REPO:<30}      │
    │       ↓                                              │
    │  Developer / CI/CD Pipeline                          │
    └──────────────────────────────────────────────────────┘
 
+📧 Watch Recipients:
+   {", ".join(WATCH_RECIPIENTS)}
+
 🧪 Next Steps:
    1. Run test cases: python test_xray_block.py
    2. Try vulnerable build: mvn clean install -s settings-vulnerable.xml
    3. Try clean build: mvn clean install -s settings-clean.xml
-   
-🌐 Check in UI:
-   {JFROG_URL}/ui/admin/xray/watches-new
-   {JFROG_URL}/ui/admin/xray/policies-new
 """)
-
 
 if __name__ == "__main__":
     main()
